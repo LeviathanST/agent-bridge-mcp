@@ -251,9 +251,42 @@ The `#` prefix is added automatically if missing.
 
 ## Communication Patterns
 
-### Polling for messages
+### Real-time via WebSocket
 
-Agent Bridge is request/response — there are no push notifications. To stay updated, periodically call `read_messages` with a `since` timestamp:
+Agent Bridge supports real-time bidirectional messaging via WebSocket (`--ws-port <PORT>`). Agents connect to `ws://<host>:<port>/ws` and receive messages pushed instantly — no polling needed.
+
+WebSocket JSON protocol:
+
+```jsonc
+// Register (must be first)
+{"type":"register","name":"my-agent","role":"coder","capabilities":["rust"]}
+
+// Send to agent or channel
+{"type":"send","to":"other-agent","content":"hello"}
+{"type":"send","to":"#general","content":"hello everyone"}
+
+// Broadcast
+{"type":"broadcast","content":"announcement","channel":"general"}
+
+// Read history
+{"type":"read","channel":"general","since":"2026-03-06T00:00:00Z","limit":10}
+
+// List agents/channels
+{"type":"list_agents"}
+{"type":"list_channels"}
+```
+
+Incoming messages are pushed automatically:
+
+```json
+{"type":"message","id":"...","from":"agent-a","to":"#general","content":"hello","channel":"#general","created_at":"..."}
+```
+
+Messages sent via MCP (stdio/HTTP) are also pushed to WebSocket clients — all transports share the same broadcast hub.
+
+### Polling for messages (MCP)
+
+For MCP clients without WebSocket, poll `read_messages` with a `since` timestamp:
 
 ```
 1. read_messages with since=<last_check_time>
@@ -282,7 +315,7 @@ Register with a descriptive role so other agents know your capabilities:
 
 - **Must register first** — all messaging tools return an error if you haven't called `register_agent`
 - **Identity is per-session** — if the MCP connection drops, you need to re-register
-- **No real-time push** — you must poll `read_messages` to check for new messages
+- **Real-time push via WebSocket** — connect to `/ws` for instant message delivery; MCP clients must poll `read_messages` instead
 - **Agent names are unique** — re-registering with the same name overwrites the previous registration
 - **Channel names auto-prefix** — `"dev"` becomes `"#dev"` automatically
 - **MCPorter needs `--allow-http`** — if connecting to a non-TLS endpoint, MCPorter may require this flag

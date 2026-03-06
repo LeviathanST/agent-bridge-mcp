@@ -6,16 +6,18 @@ A Rust MCP server that enables multiple AI agents (Claude Code instances, etc.) 
 ## Architecture
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│  Agent A     │     │  Agent B     │     │  Agent C     │
-│ (Claude Code)│     │ (Claude Code)│     │ (MCPorter)   │
-└──────┬───────┘     └──────┬───────┘     └──────┬───────┘
-       │ stdio              │ stdio              │ HTTP
-       └────────────┬───────┘────────────────────┘
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│  Agent A     │     │  Agent B     │     │  Agent C     │     │  Agent D     │
+│ (Claude Code)│     │ (Claude Code)│     │ (MCPorter)   │     │ (WS Client) │
+└──────┬───────┘     └──────┬───────┘     └──────┬───────┘     └──────┬───────┘
+       │ stdio              │ stdio              │ HTTP               │ WebSocket
+       └────────────┬───────┘────────────────────┘───────────────────┘
                     │
             ┌───────▼───────┐
             │  Agent Bridge  │
             │  (MCP Server)  │
+            ├────────────────┤
+            │  Broadcast Hub │
             ├────────────────┤
             │  SQLite DB     │
             └────────────────┘
@@ -38,6 +40,7 @@ A Rust MCP server that enables multiple AI agents (Claude Code instances, etc.) 
 
 - **stdio** (`--stdio`): For Claude Code MCP config
 - **Streamable HTTP** (`--sse-port <PORT>`): For web clients, MCPorter, etc. Endpoint at `/mcp`
+- **WebSocket** (`--ws-port <PORT>`): For real-time bidirectional communication. Endpoint at `/ws`. Agents receive messages pushed instantly — no polling needed. Cross-transport: messages sent via MCP are also pushed to WS clients.
 
 ## Files
 
@@ -46,8 +49,10 @@ agent-bridge/
 ├── Cargo.toml
 ├── PLAN.md
 └── src/
-    ├── main.rs      — CLI, transport setup (stdio + HTTP)
-    ├── bridge.rs    — MCP tool implementations
+    ├── main.rs      — CLI, transport setup (stdio + HTTP + WebSocket)
+    ├── bridge.rs    — MCP tool implementations (publishes to hub)
+    ├── hub.rs       — Broadcast fan-out (tokio::sync::broadcast)
+    ├── ws.rs        — WebSocket handler (real-time JSON protocol)
     ├── db.rs        — SQLite persistence layer
     └── models.rs    — Data types (Agent, Message, Channel)
 ```
@@ -67,8 +72,11 @@ agent-bridge --stdio
 # HTTP mode
 agent-bridge --sse-port 3000
 
-# Both simultaneously
-agent-bridge --stdio --sse-port 3000
+# WebSocket mode (real-time)
+agent-bridge --ws-port 9100
+
+# All transports simultaneously
+agent-bridge --stdio --sse-port 3000 --ws-port 9100
 
 # Custom DB path
 agent-bridge --stdio --db-path /tmp/bridge.db
@@ -98,7 +106,7 @@ agent-bridge --stdio --db-path /tmp/bridge.db
 
 ## Phase 2 Ideas
 
-- Subscriptions / real-time notifications (MCP notifications)
+- ~~Subscriptions / real-time notifications~~ ✅ Implemented via WebSocket transport
 - Agent presence / heartbeat
 - Message threading / reply-to
 - Role-based permissions

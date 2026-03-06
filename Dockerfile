@@ -12,7 +12,7 @@ COPY --from=builder /build/target/release/agent-bridge /usr/local/bin/agent-brid
 
 ENV RUST_LOG=info
 
-EXPOSE 3000
+EXPOSE 3000 9100
 
 ENTRYPOINT ["agent-bridge"]
-CMD ["--sse-port", "3000", "--db-path", "/data/bridge.db"]
+CMD ["--sse-port", "3000", "--ws-port", "9100", "--db-path", "/data/bridge.db"]

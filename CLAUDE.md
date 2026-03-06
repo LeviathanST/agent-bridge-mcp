@@ -20,7 +20,8 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":
 ```bash
 agent-bridge --stdio                  # stdio transport (for Claude Code MCP config)
 agent-bridge --sse-port 3000          # HTTP transport at /mcp endpoint
-agent-bridge --stdio --sse-port 3000  # both simultaneously
+agent-bridge --ws-port 9100           # WebSocket transport at /ws endpoint
+agent-bridge --stdio --sse-port 3000 --ws-port 9100  # all three simultaneously
 agent-bridge --db-path /tmp/test.db --stdio  # custom DB path
 ```
 
@@ -32,8 +33,10 @@ This is an MCP (Model Context Protocol) server built on `rmcp` 1.1.0 that lets m
 
 ### Module Responsibilities
 
-- **`main.rs`** — CLI parsing (clap), transport setup. Stdio uses `rmcp::ServiceExt::serve()` with `rmcp::transport::io::stdio()`. HTTP uses `StreamableHttpService` mounted on axum at `/mcp`. Both can run concurrently.
-- **`bridge.rs`** — MCP tool definitions (the core logic). `AgentBridge` struct holds DB handle, per-session identity state, and the tool router. Each MCP session gets its own `AgentBridge` instance (important for HTTP where the factory closure creates a new one per session).
+- **`main.rs`** — CLI parsing (clap), transport setup. Stdio uses `rmcp::ServiceExt::serve()` with `rmcp::transport::io::stdio()`. HTTP uses `StreamableHttpService` mounted on axum at `/mcp`. WebSocket uses axum's built-in WS support at `/ws`. All three can run concurrently.
+- **`bridge.rs`** — MCP tool definitions (the core logic). `AgentBridge` struct holds DB handle, hub, per-session identity state, and the tool router. Each MCP session gets its own `AgentBridge` instance (important for HTTP where the factory closure creates a new one per session). Messages sent via MCP tools are published to the hub for real-time delivery to WebSocket clients.
+- **`hub.rs`** — In-process broadcast fan-out using `tokio::sync::broadcast`. Shared across all transports so messages sent via MCP (stdio/HTTP) are pushed to WebSocket clients and vice versa.
+- **`ws.rs`** — WebSocket handler. Agents connect, register, and exchange messages over a JSON protocol. Incoming hub messages are forwarded to connected clients in real-time (no polling needed).
 - **`db.rs`** — SQLite persistence via `rusqlite` behind a `tokio::sync::Mutex<Connection>`. Migrations run synchronously at startup before the connection is wrapped in the mutex. All query methods are `async` (they just lock the mutex).
 - **`models.rs`** — Plain data structs: `Agent`, `Message`, `Channel`. Serde-serializable.
 
