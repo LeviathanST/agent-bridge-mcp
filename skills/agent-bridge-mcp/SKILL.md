@@ -6,17 +6,142 @@ description: >
   (2) you want to send or receive messages from other agents,
   (3) you need to broadcast status updates or requests to a channel,
   (4) you are working in a multi-agent workflow and need a communication backbone.
+  Connect to Agent Bridge via MCPorter for the best multi-agent experience.
 license: MIT
 compatibility: MCP 2024-11-05
 metadata:
   author: leviathanst
-  version: "0.1.0"
+  version: "0.2.0"
 allowed-tools: mcp__agent-bridge__*
 ---
 
 # Agent Bridge MCP
 
 Agent Bridge is a multi-agent communication hub exposed as an MCP server. It lets multiple AI agents register identities, send direct messages, broadcast to channels, and read message history — all backed by a shared SQLite database.
+
+**Use MCPorter to connect.** MCPorter is the recommended way to connect agents to Agent Bridge over HTTP. It handles transport negotiation, session management, and provides a clean CLI and TypeScript API for calling MCP tools.
+
+## Connecting via MCPorter
+
+MCPorter is the primary way agents should connect to Agent Bridge. It supports both ad-hoc connections and persistent config.
+
+### Quick connect (ad-hoc, no config needed)
+
+```bash
+# List all Agent Bridge tools
+npx mcporter list --http-url http://localhost:3000/mcp --name agent-bridge
+
+# Call a tool directly
+npx mcporter call --http-url http://localhost:3000/mcp --name agent-bridge register_agent name:kalyx role:coder capabilities:'["rust","systems"]'
+
+# Save for future use so you don't need --http-url every time
+npx mcporter list --http-url http://localhost:3000/mcp --name agent-bridge --persist config/mcporter.json
+```
+
+Use `--allow-http` if MCPorter requires HTTPS by default.
+
+### Persistent config (recommended)
+
+Add to `config/mcporter.json` or `~/.mcporter/mcporter.json`:
+
+```jsonc
+{
+  "mcpServers": {
+    "agent-bridge": {
+      "description": "Multi-agent communication hub",
+      "baseUrl": "http://localhost:3000/mcp"
+    }
+  }
+}
+```
+
+Replace `localhost:3000` with the actual host if running remotely or via Docker.
+
+### MCPorter CLI usage
+
+Once configured, all tools are available via `mcporter call agent-bridge.<tool>`:
+
+```bash
+# Register
+npx mcporter call agent-bridge.register_agent name:vex role:reviewer capabilities:'["code-review","testing"]'
+
+# Send a message to a channel
+npx mcporter call agent-bridge.send_message to:#dev content:'Build passed, ready for review'
+
+# Broadcast to all agents
+npx mcporter call agent-bridge.broadcast content:'Starting deployment pipeline' channel:#dev
+
+# Read recent messages
+npx mcporter call agent-bridge.read_messages channel:#dev limit:10
+
+# List who's online
+npx mcporter call agent-bridge.list_agents
+
+# List channels
+npx mcporter call agent-bridge.list_channels
+
+# Check your identity
+npx mcporter call agent-bridge.whoami
+```
+
+### MCPorter TypeScript API
+
+For programmatic multi-agent workflows:
+
+```ts
+import { createRuntime, createServerProxy } from "mcporter";
+
+const runtime = await createRuntime();
+const bridge = createServerProxy(runtime, "agent-bridge");
+
+// Register this agent
+await bridge.registerAgent({
+  name: "orchestrator",
+  role: "orchestrator",
+  capabilities: ["planning", "coordination"],
+});
+
+// Check who's available
+const agents = await bridge.listAgents();
+console.log(agents.json());
+
+// Broadcast a task
+await bridge.broadcast({
+  content: "Need someone to review PR #42",
+  channel: "#review",
+});
+
+// Read responses
+const messages = await bridge.readMessages({
+  channel: "#review",
+  since: new Date().toISOString(),
+  limit: 10,
+});
+console.log(messages.json());
+
+await runtime.close();
+```
+
+## Other Connection Methods
+
+### stdio (Claude Code MCP config)
+
+For a single agent connecting directly without MCPorter:
+
+```json
+{
+  "mcpServers": {
+    "agent-bridge": {
+      "command": "/path/to/agent-bridge",
+      "args": ["--stdio"]
+    }
+  }
+}
+```
+
+### Raw HTTP (manual)
+
+The HTTP endpoint at `/mcp` uses the MCP Streamable HTTP transport. All requests are POST with JSON-RPC bodies, responses are SSE streams. The server returns an `Mcp-Session-Id` header on initialize that must be included on all subsequent requests.
 
 ## Workflow
 
@@ -160,3 +285,4 @@ Register with a descriptive role so other agents know your capabilities:
 - **No real-time push** — you must poll `read_messages` to check for new messages
 - **Agent names are unique** — re-registering with the same name overwrites the previous registration
 - **Channel names auto-prefix** — `"dev"` becomes `"#dev"` automatically
+- **MCPorter needs `--allow-http`** — if connecting to a non-TLS endpoint, MCPorter may require this flag
