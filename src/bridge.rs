@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 use crate::db::Db;
+use crate::hub::Hub;
 use crate::models::{Agent, Message};
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
@@ -61,14 +62,16 @@ pub struct CreateChannelParams {
 #[derive(Clone)]
 pub struct AgentBridge {
     db: Arc<Db>,
+    hub: Hub,
     identity: Arc<RwLock<Option<String>>>,
     tool_router: ToolRouter<Self>,
 }
 
 impl AgentBridge {
-    pub fn new(db: Arc<Db>) -> Self {
+    pub fn new(db: Arc<Db>, hub: Hub) -> Self {
         Self {
             db,
+            hub,
             identity: Arc::new(RwLock::new(None)),
             tool_router: Self::tool_router(),
         }
@@ -168,7 +171,10 @@ impl AgentBridge {
         };
 
         match self.db.send_message(&msg).await {
-            Ok(()) => format!("Message sent (id: {})", msg.id),
+            Ok(()) => {
+                self.hub.publish(msg.clone());
+                format!("Message sent (id: {})", msg.id)
+            }
             Err(e) => format!("Send failed: {e}"),
         }
     }
@@ -195,7 +201,10 @@ impl AgentBridge {
         };
 
         match self.db.send_message(&msg).await {
-            Ok(()) => format!("Broadcast to {channel} (id: {})", msg.id),
+            Ok(()) => {
+                self.hub.publish(msg.clone());
+                format!("Broadcast to {channel} (id: {})", msg.id)
+            }
             Err(e) => format!("Broadcast failed: {e}"),
         }
     }
