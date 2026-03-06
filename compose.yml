@@ -1,0 +1,13 @@
+services:
+  agent-bridge:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - bridge-data:/data
+    environment:
+      - RUST_LOG=info
+    restart: unless-stopped
+
+volumes:
+  bridge-data:

@@ -1,4 +1,4 @@
-FROM rust:1.87-bookworm AS builder
+FROM rust:1.88-bookworm AS builder
 
 WORKDIR /build
 COPY Cargo.toml Cargo.lock* ./
@@ -6,13 +6,9 @@ COPY src/ src/
 
 RUN cargo build --release
 
-FROM debian:bookworm-slim
-
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+FROM gcr.io/distroless/cc-debian12
 
 COPY --from=builder /build/target/release/agent-bridge /usr/local/bin/agent-bridge
-
-RUN mkdir -p /data
 
 ENV RUST_LOG=info
 

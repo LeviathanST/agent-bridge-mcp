@@ -24,6 +24,8 @@ pub struct RegisterAgentParams {
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SendMessageParams {
+    /// Your agent name (required if not registered in this session)
+    pub from: Option<String>,
     /// Target agent name or channel (prefixed with #)
     pub to: String,
     /// Message content
@@ -32,6 +34,8 @@ pub struct SendMessageParams {
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct BroadcastParams {
+    /// Your agent name (required if not registered in this session)
+    pub from: Option<String>,
     /// Message content to broadcast
     pub content: String,
     /// Channel to broadcast to (defaults to #general)
@@ -70,12 +74,20 @@ impl AgentBridge {
         }
     }
 
-    async fn require_identity(&self) -> Result<String, String> {
+    async fn resolve_identity(&self, from: Option<String>) -> Result<String, String> {
+        if let Some(name) = from {
+            // Validate agent exists in DB
+            match self.db.get_agent_by_name(&name).await {
+                Ok(Some(_)) => return Ok(name),
+                Ok(None) => return Err(format!("Agent '{name}' not found. Call register_agent first.")),
+                Err(e) => return Err(format!("Error: {e}")),
+            }
+        }
         self.identity
             .read()
             .await
             .clone()
-            .ok_or_else(|| "Not registered. Call register_agent first.".to_string())
+            .ok_or_else(|| "Provide 'from' param or call register_agent first.".to_string())
     }
 
     fn normalize_channel(name: &str) -> String {
@@ -133,9 +145,9 @@ impl AgentBridge {
     }
 
     /// Send a message to a specific agent or channel
-    #[tool(description = "Send a message to a specific agent or channel")]
+    #[tool(description = "Send a message to a specific agent or channel. Pass 'from' if not registered in this session.")]
     async fn send_message(&self, Parameters(params): Parameters<SendMessageParams>) -> String {
-        let from = match self.require_identity().await {
+        let from = match self.resolve_identity(params.from).await {
             Ok(name) => name,
             Err(e) => return e,
         };
@@ -162,9 +174,9 @@ impl AgentBridge {
     }
 
     /// Broadcast a message to all agents in a channel
-    #[tool(description = "Broadcast a message to all agents in a channel")]
+    #[tool(description = "Broadcast a message to all agents in a channel. Pass 'from' if not registered in this session.")]
     async fn broadcast(&self, Parameters(params): Parameters<BroadcastParams>) -> String {
-        let from = match self.require_identity().await {
+        let from = match self.resolve_identity(params.from).await {
             Ok(name) => name,
             Err(e) => return e,
         };
